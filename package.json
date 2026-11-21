@@ -1,0 +1,36 @@
+{
+  "name": "codex-antigravity-plugin",
+  "version": "0.1.0",
+  "description": "Antigravity plugin and MCP bridge to delegate coding, debugging, and reviews to OpenAI Codex via codex app-server.",
+  "type": "module",
+  "main": "server.mjs",
+  "bin": {
+    "codex-antigravity-mcp": "server.mjs"
+  },
+  "scripts": {
+    "start": "node server.mjs",
+    "test": "node --test test/server.test.mjs"
+  },
+  "keywords": [
+    "antigravity",
+    "codex",
+    "openai",
+    "mcp",
+    "subagent",
+    "app-server",
+    "git-worktree"
+  ],
+  "author": "liizhuoo",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/liizhuoo/codex-antigravity-plugin.git"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.32.1",
+    "zod": "^4.6.7"
+  }
+}

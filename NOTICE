@@ -1,0 +1,9 @@
+This project incorporates and builds upon prior open-source work:
+
+1. Goudu666/codex-app-server-mcp (MIT License)
+   https://github.com/Goudu666/codex-app-server-mcp
+   Used as the foundation for the stdio MCP bridge over `codex app-server`.
+
+2. openai/codex-plugin-cc (Apache License 2.0)
+   https://github.com/openai/codex-plugin-cc
+   Inspired the prompting blocks, result-handling discipline, and review/rescue workflow patterns.

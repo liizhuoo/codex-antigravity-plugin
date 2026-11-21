@@ -1,0 +1,27 @@
+{
+  "$schema": "https://antigravity.google/schemas/v1/plugin.json",
+  "name": "codex",
+  "displayName": "Codex",
+  "version": "0.1.0",
+  "description": "Delegate coding, refactoring, debugging, and code reviews to OpenAI Codex via persistent app-server threads and a dedicated subagent.",
+  "logo": "assets/logo.svg",
+  "license": "MIT",
+  "author": {
+    "name": "liizhuoo",
+    "url": "https://github.com/liizhuoo"
+  },
+  "homepage": "https://github.com/liizhuoo/codex-antigravity-plugin",
+  "repository": "https://github.com/liizhuoo/codex-antigravity-plugin",
+  "keywords": [
+    "codex",
+    "openai",
+    "subagent",
+    "code-review",
+    "worktree"
+  ],
+  "suggestedPrompts": [
+    "Have Codex implement this change in an isolated git worktree",
+    "Ask Codex for an adversarial review of my uncommitted changes",
+    "Delegate diagnosing and fixing the failing tests to Codex"
+  ]
+}

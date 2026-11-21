@@ -1,0 +1,21 @@
+{
+  "mcpServers": {
+    "bridge": {
+      "command": "/bin/sh",
+      "args": ["${PLUGIN_ROOT}/scripts/launch-mcp.sh"],
+      "env": {
+        "CODEX_SANDBOX": "workspace-write",
+        "CODEX_APPROVAL": "on-request",
+        "CODEX_WAIT_SECONDS": "90"
+      },
+      "timeoutSeconds": 600,
+      "tools": {
+        "codex_run": { "eager": true },
+        "codex_wait": { "eager": true },
+        "codex_respond": { "eager": true },
+        "codex_review": { "eager": true },
+        "codex_worktree": { "eager": true }
+      }
+    }
+  }
+}
