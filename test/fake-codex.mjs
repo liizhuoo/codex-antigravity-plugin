@@ -9,7 +9,16 @@
 //   "crash"        exit the process mid-turn
 //   "approve-early" like approve, but the request is sent before the turn/start response
 //   "policy"       reply with the sandbox this thread was started/resumed with
+//   "delay-turn-start" hold the turn/start RPC response briefly to test concurrency
+//   "error-fatal"  emit a non-retried error notification then fail the turn
+//   "bad-json-then-ok" emit a non-JSON stdout line then reply normally
+import { appendFileSync, existsSync, rmSync } from 'node:fs';
+import { join } from 'node:path';
+
 if (process.argv[2] !== 'app-server') process.exit(2);
+
+const HANG = Symbol('HANG');
+const delay = (ms) => new Promise((r) => setTimeout(r, ms));
 
 let buf = '';
 let nextId = 1000;
@@ -41,7 +50,7 @@ function complete(threadId, turnId, status = 'completed') {
 
 function startTurn(threadId, input) {
   const text = input[0].text;
-  const turnId = `turn_${itemSeq++}`;
+  const turnId = `turn_${process.pid}_${itemSeq++}`;
   setImmediate(() => {
     notify('turn/started', { threadId, turn: turn(turnId) });
     if (text.startsWith('echo ')) {
@@ -91,6 +100,13 @@ function startTurn(threadId, input) {
     } else if (text === 'policy') {
       message(threadId, turnId, `sandbox=${sandboxes.get(threadId)}`);
       complete(threadId, turnId);
+    } else if (text === 'error-fatal') {
+      notify('error', { threadId, willRetry: false, error: { message: 'fatal upstream error' } });
+      complete(threadId, turnId, 'failed');
+    } else if (text === 'bad-json-then-ok') {
+      process.stdout.write('not-valid-json-noise\n');
+      message(threadId, turnId, 'survived-noise');
+      complete(threadId, turnId);
     } else if (text === 'crash') {
       process.exit(1);
     }
@@ -100,20 +116,52 @@ function startTurn(threadId, input) {
 }
 
 const handlers = {
-  initialize: () => ({ userAgent: 'fake', codexHome: '/tmp', platformFamily: 'unix', platformOs: 'macos' }),
+  initialize: () => {
+    const hangOnce = process.env.CODEX_FAKE_HANG_ONCE_FILE;
+    if (hangOnce && existsSync(hangOnce)) {
+      rmSync(hangOnce, { force: true });
+      setInterval(() => {}, 10000);
+      return HANG;
+    }
+    if (process.env.CODEX_FAKE_HANG_INIT === '1') {
+      setInterval(() => {}, 10000);
+      return HANG;
+    }
+    return { userAgent: 'fake', codexHome: '/tmp', platformFamily: 'unix', platformOs: 'macos' };
+  },
   'thread/start': (p) => {
-    const id = `thread_${threadSeq++}`;
+    if (process.env.CODEX_FAKE_FAIL_THREAD_START === '1' || (p.cwd && existsSync(join(p.cwd, '.fail-thread-start')))) {
+      throw new Error('simulated thread/start failure');
+    }
+    const id = `thread_${process.pid}_${threadSeq++}`;
     sandboxes.set(id, p.sandbox);
     return { thread: { id }, cwd: p.cwd, model: 'fake-model', sandbox: p.sandbox, approvalPolicy: p.approvalPolicy };
   },
-  'thread/resume': (p) => {
+  'thread/resume': async (p) => {
+    if (process.env.CODEX_FAKE_LOG_FILE) {
+      appendFileSync(process.env.CODEX_FAKE_LOG_FILE, 'thread/resume\n');
+    }
+    const resumeDelay = Number(process.env.CODEX_FAKE_RESUME_DELAY_MS || 0);
+    if (resumeDelay > 0) await delay(resumeDelay);
     sandboxes.set(p.threadId, p.sandbox);
     return { thread: { id: p.threadId } };
   },
   'turn/start': (p) => {
     const text = p.input[0].text;
+    if (text === 'delay-turn-start') {
+      const turnId = `turn_${process.pid}_${itemSeq++}`;
+      turns.set(p.threadId, { id: turnId });
+      return delay(150).then(() => {
+        setImmediate(() => {
+          notify('turn/started', { threadId: p.threadId, turn: turn(turnId) });
+          message(p.threadId, turnId, 'delayed-ok');
+          complete(p.threadId, turnId);
+        });
+        return { turn: turn(turnId) };
+      });
+    }
     if (text !== 'approve-early') return { turn: turn(startTurn(p.threadId, p.input)) };
-    const turnId = `turn_${itemSeq++}`;
+    const turnId = `turn_${process.pid}_${itemSeq++}`;
     turns.set(p.threadId, { id: turnId });
     ask('item/commandExecution/requestApproval', { threadId: p.threadId, turnId, itemId: 'x', command: 'curl evil', cwd: '/tmp', startedAtMs: 0 }, ({ decision }) => {
       message(p.threadId, turnId, `decision=${decision}`);
@@ -133,7 +181,13 @@ const handlers = {
     return {};
   },
   'review/start': (p) => {
-    const turnId = `turn_${itemSeq++}`;
+    if (
+      process.env.CODEX_FAKE_FAIL_REVIEW_START === '1' ||
+      (typeof p.target?.instructions === 'string' && p.target.instructions.includes('fail-review-start'))
+    ) {
+      throw new Error('simulated review/start failure');
+    }
+    const turnId = `turn_${process.pid}_${itemSeq++}`;
     setImmediate(() => {
       notify('turn/started', { threadId: p.threadId, turn: turn(turnId) });
       item(p.threadId, turnId, { type: 'exitedReviewMode', review: `REVIEW ${JSON.stringify(p.target)}` });
@@ -142,10 +196,16 @@ const handlers = {
     return { turn: turn(turnId), reviewThreadId: p.threadId };
   },
   'thread/compact/start': () => ({}),
-  'model/list': () => ({
-    data: [{ id: 'fake-model', displayName: 'Fake', description: 'd', isDefault: true, defaultReasoningEffort: 'medium', supportedReasoningEfforts: [{ reasoningEffort: 'low' }, { reasoningEffort: 'medium' }] }],
-    nextCursor: null,
-  }),
+  'model/list': () => {
+    if (process.env.CODEX_FAKE_HANG_METHOD === 'model/list') {
+      setInterval(() => {}, 10000);
+      return HANG;
+    }
+    return {
+      data: [{ id: 'fake-model', displayName: 'Fake', description: 'd', isDefault: true, defaultReasoningEffort: 'medium', supportedReasoningEfforts: [{ reasoningEffort: 'low' }, { reasoningEffort: 'medium' }] }],
+      nextCursor: null,
+    };
+  },
   'thread/list': () => ({ data: [{ id: 'thread_0', name: null, preview: 'hi', cwd: '/tmp', model: 'fake-model', updatedAt: 0 }], nextCursor: null }),
 };
 
@@ -161,7 +221,18 @@ process.stdin.on('data', (d) => {
       notify('serverRequest/resolved', { threadId: null, requestId: msg.id });
     } else if (msg.id !== undefined) {
       try {
-        send({ id: msg.id, result: handlers[msg.method](msg.params) });
+        const res = handlers[msg.method](msg.params);
+        if (res === HANG) continue;
+        if (res && typeof res.then === 'function') {
+          res.then(
+            (val) => {
+              if (val !== HANG) send({ id: msg.id, result: val });
+            },
+            (e) => send({ id: msg.id, error: { code: -1, message: e.message } }),
+          );
+        } else {
+          send({ id: msg.id, result: res });
+        }
       } catch (e) {
         send({ id: msg.id, error: { code: -1, message: e.message } });
       }

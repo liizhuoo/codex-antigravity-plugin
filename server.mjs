@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 // MCP server that lets Antigravity (or any MCP client) drive OpenAI Codex through `codex app-server`.
 // stdout belongs to MCP — log only to stderr.
+import { existsSync } from 'node:fs';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { z } from 'zod';
@@ -25,6 +26,7 @@ const envInt = (name, min, max, fallback) => {
 };
 
 const defaultWait = envInt('CODEX_WAIT_SECONDS', 0, 1800, 120);
+const rpcTimeoutMs = envInt('CODEX_RPC_TIMEOUT_MS', 1000, 600000, 60000);
 
 const bridge = new Bridge({
   bin: process.env.CODEX_BIN || 'codex',
@@ -33,6 +35,7 @@ const bridge = new Bridge({
   model: process.env.CODEX_MODEL || undefined, // undefined → ~/.codex/config.toml default
   effort: process.env.CODEX_EFFORT || undefined,
   waitSeconds: defaultWait,
+  rpcTimeoutMs,
 });
 
 const json = (v) => ({ content: [{ type: 'text', text: JSON.stringify(v, null, 2) }] });
@@ -51,7 +54,16 @@ const waitArg = z
   .default(defaultWait)
   .describe(`Seconds to block before returning a progress snapshot (default ${defaultWait}). Returns early when the turn finishes or Codex needs an answer. The turn keeps running after this returns.`);
 
-const server = new McpServer({ name: 'codex-bridge', version: '0.1.0' });
+const server = new McpServer(
+  { name: 'codex-bridge', version: '0.2.0' },
+  {
+    instructions:
+      'Bridge to OpenAI Codex via codex app-server. Use codex_run to start or continue coding tasks (use worktree: true for parallel or risky edits) ' +
+      'and codex_review for independent read-only code reviews. When status is "inProgress", keep polling with codex_wait; ' +
+      'when "waitingForInput", answer pending_requests with codex_respond. For worktree: true tasks, inspect diffs with codex_worktree(action="diff") ' +
+      'before merging or removing with codex_worktree(action="remove").',
+  },
+);
 
 server.registerTool(
   'codex_run',
@@ -86,6 +98,17 @@ server.registerTool(
   },
   async ({ prompt, cwd, thread_id, images, model, effort, sandbox, approval, worktree, web_search, output_schema, wait_seconds }) => {
     let threadId = thread_id;
+    if (threadId && worktree) {
+      throw new Error('worktree cannot be combined with thread_id — start a new thread without thread_id to create a worktree');
+    }
+    if (threadId && web_search) {
+      throw new Error('web_search cannot be combined with thread_id — start a new thread without thread_id to enable web_search');
+    }
+    for (const img of images ?? []) {
+      if (!existsSync(img)) {
+        throw new Error(`image path does not exist: ${img}`);
+      }
+    }
     if (threadId) {
       await bridge.ensureLoaded(threadId, { cwd, sandbox, approval });
     } else {
@@ -113,7 +136,8 @@ server.registerTool(
     },
   },
   async ({ thread_id, thread_ids, mode, wait_seconds }) => {
-    const ids = thread_ids ?? (thread_id ? [thread_id] : []);
+    const rawIds = thread_ids ?? (thread_id ? [thread_id] : []);
+    const ids = [...new Set(rawIds)];
     if (!ids.length) throw new Error('pass thread_id or thread_ids');
     ids.forEach(known);
     await bridge.wait(ids, wait_seconds, mode);

@@ -19,6 +19,7 @@ description: >-
    - Deep design/tradeoff challenge (concurrency, state, failure modes): `adversarial: true`, plus optional `focus` string.
 3. Call `codex_review` with `wait_seconds: 90` (and poll with `codex_wait` if `status === "inProgress"`).
    - Leave `model` and `effort` unset unless the user requested specific overrides.
+   - If custom instructions ask Codex to run `git status` or `git diff` in a `read-only` sandbox, use `git --no-optional-locks` so git does not attempt `.git/index.lock` writes.
 
 ## Result-Handling Rules
 

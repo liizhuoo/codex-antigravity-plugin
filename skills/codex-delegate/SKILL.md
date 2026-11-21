@@ -32,6 +32,7 @@ description: >-
 
 ## Managing Worktrees & Verification
 
+- In `worktree: true` + `sandbox: "workspace-write"`, instruct Codex to leave changes **uncommitted** inside the worktree (do not `git commit` inside the sandboxed linked worktree, where Seatbelt can block `.git/worktrees/.../index.lock`); inspect via `codex_worktree(action="diff", path=<worktree.path>)` and merge/commit from the main repo.
 - Inspect worktree changes with `codex_worktree(action="diff", path=<worktree.path>)`.
 - List active Codex worktrees with `codex_worktree(action="list", cwd=<repo>)`.
 - Clean up after merging or discarding with `codex_worktree(action="remove", path=<worktree.path>, delete_branch=true)`.

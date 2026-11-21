@@ -36,7 +36,8 @@ Choose the execution mode based on the task context (or follow explicit instruct
    - Making broad, experimental, or risky refactors that should be diff-reviewed before touching the active branch.
    - The parent explicitly asks for isolation.
    - Note: A worktree branches from `HEAD` (`parent_dirty: true` warns that uncommitted parent changes are not inside the worktree).
-3. **Read-only (`sandbox: "read-only"` or `codex_review`)** — use for diagnosis-only, planning, or code review without file edits.
+   - In `worktree: true` + `workspace-write`, instruct Codex to leave changes **uncommitted** inside the worktree (do not `git commit` inside the sandboxed linked worktree, where macOS Seatbelt can block `.git/worktrees/.../index.lock`); the parent inspects via `codex_worktree(action="diff")` and commits/merges from the main repo.
+3. **Read-only (`sandbox: "read-only"` or `codex_review`)** — use for diagnosis-only, planning, or code review without file edits. (When advising git read commands inside a `read-only` sandbox, prefer `git --no-optional-locks` to avoid lock writes.)
 
 ## Prompt Shaping & Execution Loop
 

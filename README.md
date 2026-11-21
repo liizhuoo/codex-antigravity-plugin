@@ -23,12 +23,13 @@ This project stands on the shoulders of two open-source foundations:
 - **[Goudu666/codex-app-server-mcp](https://github.com/Goudu666/codex-app-server-mcp)** (MIT): persistent `codex app-server` bridge, multi-turn `thread_id` continuity, async `wait_seconds`, two-way `codex_respond`, `codex_steer`, `codex_interrupt`, `codex_review`, and isolated git worktrees.
 - **[openai/codex-plugin-cc](https://github.com/openai/codex-plugin-cc)** (Apache-2.0): XML prompt contracts, result-handling discipline, and adversarial review workflow.
 
-Targeted improvements for **Antigravity**:
+Targeted improvements for **Antigravity** (`v0.2.0`):
 1. **Native Antigravity Subagent (`agents/codex.md`)**: Call `invoke_subagent(TypeName="codex")` (and follow up via `send_message`) so Codex work stays isolated from the main conversation context and runs cleanly in parallel.
-2. **macOS/Linux GUI `PATH` & Sandbox Resilience**: `scripts/launch-mcp.sh` and `lib/app-server.mjs` resolve `node` and `codex` across Homebrew, nvm, fnm, volta, and standard paths so GUI-spawned MCP servers work even with stripped `PATH`.
-3. **Antigravity Timeout Alignment**: Default `wait_seconds` is `90` (via `CODEX_WAIT_SECONDS`) with `timeoutSeconds: 600` in `mcp_config.json`, preventing premature MCP tool timeouts during `high`/`xhigh` reasoning runs.
-4. **Full Diff & Worktree Lifecycle**: Captures `turn/diff/updated` (including shell-command edits missed by `fileChange` items) and exposes `codex_worktree` (`list`, `diff`, safe `remove` with dirty-tree guard).
-5. **Multimodal Input**: `codex_run` accepts `images` (`localImage` paths) for screenshots or UI mockups.
+2. **macOS/Linux GUI `PATH` & Sandbox Resilience**: `scripts/launch-mcp.sh` and `lib/app-server.mjs` append Homebrew, nvm (preferring `~/.nvm/alias/default` or newest version), fnm, volta, and standard fallback paths *after* the user's `PATH` so GUI-spawned MCP servers work without overriding user-chosen binaries.
+3. **Antigravity Timeout & RPC Recovery**: Default `wait_seconds` is `90` (`CODEX_WAIT_SECONDS`), `timeoutSeconds: 600` in `mcp_config.json`, and `CODEX_RPC_TIMEOUT_MS` (default `60000` ms, `initialize` capped at `45000` ms) kills wedged app-server children and respawns cleanly on timeout.
+4. **Hardened Worktree Lifecycle**: Metadata sidecars under `~/.codex-mcp/meta` keep worktree `git status` clean, capture `baseHead` so `codex_worktree(action="diff")` surfaces both committed-on-branch and uncommitted edits with UTF-8 byte-exact truncation, and enforce strict ownership checks (`~/.codex-mcp/worktrees` + linked worktree + sidecar/`codex/*`) before removal, with atomic rollback if `thread/start` fails.
+5. **Concurrency & Bounded Memory**: Per-thread turn-start guards (`startingTurn`) and `thread/resume` deduplication (`loadingPromise`), plus automatic pruning of prior-turn items/diffs, `64 KiB` diff caps, and eviction of settled threads beyond `100`.
+6. **Multimodal Input**: `codex_run` accepts `images` (`localImage` paths, validated before starting a thread/turn) for screenshots or UI mockups.
 
 ## Prerequisites
 
