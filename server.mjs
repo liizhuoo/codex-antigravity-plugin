@@ -55,13 +55,14 @@ const waitArg = z
   .describe(`Seconds to block before returning a progress snapshot (default ${defaultWait}). Returns early when the turn finishes or Codex needs an answer. The turn keeps running after this returns.`);
 
 const server = new McpServer(
-  { name: 'codex-bridge', version: '0.2.0' },
+  { name: 'codex-bridge', version: '0.2.1' },
   {
     instructions:
       'Bridge to OpenAI Codex via codex app-server. Use codex_run to start or continue coding tasks (use worktree: true for parallel or risky edits) ' +
       'and codex_review for independent read-only code reviews. When status is "inProgress", keep polling with codex_wait; ' +
-      'when "waitingForInput", answer pending_requests with codex_respond. For worktree: true tasks, inspect diffs with codex_worktree(action="diff") ' +
-      'before merging or removing with codex_worktree(action="remove").',
+      'when "waitingForInput", answer pending_requests with codex_respond. Keep model and effort stable across follow-up turns on the same thread_id ' +
+      '(and avoid adding output_schema mid-thread) to preserve prompt caching and reasoning continuity. For worktree: true tasks, inspect diffs with ' +
+      'codex_worktree(action="diff") before merging or removing with codex_worktree(action="remove").',
   },
 );
 
@@ -110,12 +111,20 @@ server.registerTool(
       }
     }
     if (threadId) {
-      await bridge.ensureLoaded(threadId, { cwd, sandbox, approval });
+      await bridge.ensureLoaded(threadId, { cwd, sandbox, approval, model, effort });
     } else {
       if (!cwd) throw new Error('cwd is required when starting a new thread');
-      threadId = await bridge.startThread({ cwd, sandbox, approval, worktree, web_search });
+      threadId = await bridge.startThread({ cwd, sandbox, approval, worktree, web_search, model, effort });
     }
-    await bridge.startTurn(threadId, { prompt, images, model, effort, output_schema, cwd: thread_id && cwd, approval: thread_id && approval });
+    await bridge.startTurn(threadId, {
+      prompt,
+      images,
+      model: thread_id ? model : undefined,
+      effort: thread_id ? effort : undefined,
+      output_schema,
+      cwd: thread_id ? cwd : undefined,
+      approval: thread_id ? approval : undefined,
+    });
     await bridge.wait([threadId], wait_seconds);
     return json(bridge.report(threadId));
   },

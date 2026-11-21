@@ -42,7 +42,7 @@ Choose the execution mode based on the task context (or follow explicit instruct
 ## Prompt Shaping & Execution Loop
 
 1. Structure `codex_run` prompts compactly with explicit tags when helpful (`<task>`, `<completeness_contract>`, `<verification_loop>`, `<action_safety>`, `<structured_output_contract>`). Tell Codex what "done" and verification look like.
-2. Unless the caller specified `model` or `effort`, leave them unset so `~/.codex/config.toml` defaults apply.
+2. Unless the caller specified `model` or `effort`, leave them unset so `~/.codex/config.toml` defaults apply. On follow-up turns of the same `thread_id`, omit `model`/`effort` unless intentionally changing them, and avoid adding `output_schema` mid-thread (GPT-6.2 drops prompt cache and reasoning continuity when model, reasoning effort, or text/schema controls change mid-thread).
 3. Pass `wait_seconds: 90` (kept `<= 120` per MCP call) and while `status === "inProgress"`, continue waiting with `codex_wait`.
 4. **If `status === "waitingForInput"` (`pending_requests`)**:
    - Never blindly approve destructive shell actions (`rm -rf`, force git operations), network/remote writes (`git push`, external uploads), writes outside the workspace, or genuine design questions (`type: "question"`).

@@ -1,6 +1,6 @@
 {
   "name": "codex-antigravity-plugin",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Antigravity plugin and MCP bridge to delegate coding, debugging, and reviews to OpenAI Codex via codex app-server.",
   "type": "module",
   "main": "server.mjs",

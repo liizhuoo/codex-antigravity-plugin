@@ -8,7 +8,7 @@ import { after, before, test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
-import { AppServer, buildChildEnv, resolveCodexBin } from '../lib/app-server.mjs';
+import { AppServer, buildChildEnv, OPT_OUT_NOTIFICATIONS, resolveCodexBin } from '../lib/app-server.mjs';
 import { Bridge } from '../lib/bridge.mjs';
 import { createWorktree, inspectWorktreeDiff, listWorktrees, removeWorktree, WORKTREE_META_ROOT, WORKTREE_ROOT } from '../lib/worktree.mjs';
 
@@ -40,8 +40,8 @@ async function call(name, args) {
   return JSON.parse(r.content[0].text);
 }
 
-test('exposes every expected MCP tool, server version 0.2.0, and instructions', async () => {
-  assert.equal(client.getServerVersion()?.version, '0.2.0');
+test('exposes every expected MCP tool, server version 0.2.1, and instructions', async () => {
+  assert.equal(client.getServerVersion()?.version, '0.2.1');
   assert.match(client.getInstructions() ?? '', /codex_run/);
   const names = (await client.listTools()).tools.map((t) => t.name).sort();
   assert.deepEqual(names, [
@@ -72,9 +72,10 @@ test('run → completed, then continue the same thread', async () => {
 test('captures turn/diff/updated and token_usage even for shell-based edits', async () => {
   const r = await call('codex_run', { cwd: '/tmp', prompt: 'shell-edit', wait_seconds: 5 });
   assert.equal(r.status, 'completed');
+  assert.equal(r.model, 'fake-model');
   assert.deepEqual(r.files_changed, [{ path: 'src/app.js', type: 'modified' }]);
   assert.match(r.diff_preview, /\+new/);
-  assert.deepEqual(r.token_usage, { input: 100, cached: 20, output: 30 });
+  assert.deepEqual(r.token_usage, { input: 100, cached: 20, cache_write: 5, output: 30, reasoning: 10, cache_hit_rate: 20 });
 });
 
 test('forwards localImage paths via images option and rejects invalid run combos/missing images', async () => {
@@ -587,6 +588,81 @@ test('Bridge ensures single thread/resume, prunes prior turns, caps diffs at 64K
   } finally {
     await bridge.close();
     rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('prompt cache preservation: thread/start sets model/effort, follow-ups avoid redundant overrides or default clobbering, and initialize opts out of deltas', async () => {
+  // 1. Over MCP: new thread sets model/effort on thread/start with zero redundant overrides on turn/start
+  const t1 = await call('codex_run', {
+    cwd: '/tmp',
+    model: 'gpt-6.2-sol',
+    effort: 'low',
+    prompt: 'inspect-meta',
+    wait_seconds: 5,
+  });
+  assert.equal(t1.model, 'gpt-6.2-sol');
+  const m1 = JSON.parse(t1.latest_message);
+  assert.deepEqual(m1.initCapabilities.optOutNotificationMethods, OPT_OUT_NOTIFICATIONS);
+  assert.equal(m1.meta.startModel, 'gpt-6.2-sol');
+  assert.equal(m1.meta.startEffort, 'low');
+  assert.deepEqual(m1.meta.lastTurnParams, { model: null, effort: null, cwd: null, approvalPolicy: null });
+
+  // 2. Follow-up with identical model/effort and symlinked realpath cwd sends zero redundant overrides
+  const t2 = await call('codex_run', {
+    thread_id: t1.thread_id,
+    cwd: realpathSync('/tmp'),
+    model: 'gpt-6.2-sol',
+    effort: 'low',
+    prompt: 'inspect-meta',
+    wait_seconds: 5,
+  });
+  const m2 = JSON.parse(t2.latest_message);
+  assert.deepEqual(m2.meta.lastTurnParams, { model: null, effort: null, cwd: null, approvalPolicy: null });
+
+  // 3. Explicit follow-up model/effort change IS forwarded and remembered
+  const t3 = await call('codex_run', {
+    thread_id: t1.thread_id,
+    model: 'gpt-6.2-astra',
+    effort: 'high',
+    prompt: 'inspect-meta',
+    wait_seconds: 5,
+  });
+  assert.equal(t3.model, 'gpt-6.2-astra');
+  const m3 = JSON.parse(t3.latest_message);
+  assert.deepEqual(m3.meta.lastTurnParams, { model: 'gpt-6.2-astra', effort: 'high', cwd: null, approvalPolicy: null });
+
+  // 4. Bridge with explicit default model/effort does NOT clobber a thread's custom model/effort on follow-up or post-crash resume
+  const bridge = new Bridge({
+    bin: path('./fake-codex.mjs'),
+    sandbox: 'workspace-write',
+    approval: 'on-request',
+    model: 'default-model',
+    effort: 'xhigh',
+  });
+  try {
+    const customId = await bridge.startThread({ cwd: '/tmp', model: 'gpt-6-luna', effort: 'low' });
+    await bridge.startTurn(customId, { prompt: 'inspect-meta' });
+    await bridge.wait([customId], 5);
+    const b1 = JSON.parse(bridge.report(customId).latest_message);
+    assert.equal(b1.meta.startModel, 'gpt-6-luna');
+    assert.equal(b1.meta.startEffort, 'low');
+    assert.deepEqual(b1.meta.lastTurnParams, { model: null, effort: null, cwd: null, approvalPolicy: null });
+
+    // Crash app-server and resume customId without specifying model/effort → preserves gpt-6-luna + low!
+    const crashId = await bridge.startThread({ cwd: '/tmp' });
+    await bridge.startTurn(crashId, { prompt: 'crash' });
+    await bridge.wait([crashId], 5);
+
+    await bridge.ensureLoaded(customId);
+    await bridge.startTurn(customId, { prompt: 'inspect-meta' });
+    await bridge.wait([customId], 5);
+    const b2 = JSON.parse(bridge.report(customId).latest_message);
+    assert.equal(b2.meta.resumeModel, 'gpt-6-luna');
+    assert.equal(b2.meta.resumeEffort, 'low');
+    assert.deepEqual(b2.meta.lastTurnParams, { model: null, effort: null, cwd: null, approvalPolicy: null });
+    assert.equal(bridge.report(customId).model, 'gpt-6-luna');
+  } finally {
+    await bridge.close();
   }
 });
 

@@ -2,7 +2,7 @@
 
 An [Antigravity](https://antigravity.google) global plugin and MCP bridge that lets Antigravity delegate coding, debugging, refactoring, and code reviews to **OpenAI Codex** just like a native subagent.
 
-Built on top of [`codex app-server`](https://developers.openai.com/codex/) (compatible with Codex CLI `>= 0.154.0`, tested on `0.162.0`—note that legacy `codex mcp-server` was removed in `0.154.0`).
+Built on top of [`codex app-server`](https://developers.openai.com/codex/) (compatible with Codex CLI `>= 0.154.0`; `>= 0.166.0` recommended for GPT-6.2 prompt caching; tested on `0.171.0`—note that legacy `codex mcp-server` was removed in `0.154.0`).
 
 [中文说明](#中文说明)
 
@@ -23,13 +23,14 @@ This project stands on the shoulders of two open-source foundations:
 - **[Goudu666/codex-app-server-mcp](https://github.com/Goudu666/codex-app-server-mcp)** (MIT): persistent `codex app-server` bridge, multi-turn `thread_id` continuity, async `wait_seconds`, two-way `codex_respond`, `codex_steer`, `codex_interrupt`, `codex_review`, and isolated git worktrees.
 - **[openai/codex-plugin-cc](https://github.com/openai/codex-plugin-cc)** (Apache-2.0): XML prompt contracts, result-handling discipline, and adversarial review workflow.
 
-Targeted improvements for **Antigravity** (`v0.2.0`):
+Targeted improvements for **Antigravity** (`v0.2.1`):
 1. **Native Antigravity Subagent (`agents/codex.md`)**: Call `invoke_subagent(TypeName="codex")` (and follow up via `send_message`) so Codex work stays isolated from the main conversation context and runs cleanly in parallel.
 2. **macOS/Linux GUI `PATH` & Sandbox Resilience**: `scripts/launch-mcp.sh` and `lib/app-server.mjs` append Homebrew, nvm (preferring `~/.nvm/alias/default` or newest version), fnm, volta, and standard fallback paths *after* the user's `PATH` so GUI-spawned MCP servers work without overriding user-chosen binaries.
 3. **Antigravity Timeout & RPC Recovery**: Default `wait_seconds` is `90` (`CODEX_WAIT_SECONDS`), `timeoutSeconds: 600` in `mcp_config.json`, and `CODEX_RPC_TIMEOUT_MS` (default `60000` ms, `initialize` capped at `45000` ms) kills wedged app-server children and respawns cleanly on timeout.
-4. **Hardened Worktree Lifecycle**: Metadata sidecars under `~/.codex-mcp/meta` keep worktree `git status` clean, capture `baseHead` so `codex_worktree(action="diff")` surfaces both committed-on-branch and uncommitted edits with UTF-8 byte-exact truncation, and enforce strict ownership checks (`~/.codex-mcp/worktrees` + linked worktree + sidecar/`codex/*`) before removal, with atomic rollback if `thread/start` fails.
-5. **Concurrency & Bounded Memory**: Per-thread turn-start guards (`startingTurn`) and `thread/resume` deduplication (`loadingPromise`), plus automatic pruning of prior-turn items/diffs, `64 KiB` diff caps, and eviction of settled threads beyond `100`.
-6. **Multimodal Input**: `codex_run` accepts `images` (`localImage` paths, validated before starting a thread/turn) for screenshots or UI mockups.
+4. **GPT-6.2 Prompt Cache & Prefix Preservation**: Passes `model`/`effort` directly into `thread/start` (avoiding first-turn model-switch cache misses), preserves thread-scoped `model`/`effort` across follow-ups and `thread/resume` without bridge-default clobbering, omits unchanged `cwd`/`approval`/`model`/`effort` overrides on continuation turns, opts out of unused high-volume delta notifications, and reports `cache_hit_rate` and `cache_write` in `token_usage`.
+5. **Hardened Worktree Lifecycle**: Metadata sidecars under `~/.codex-mcp/meta` keep worktree `git status` clean, capture `baseHead` so `codex_worktree(action="diff")` surfaces both committed-on-branch and uncommitted edits with UTF-8 byte-exact truncation, and enforce strict ownership checks (`~/.codex-mcp/worktrees` + linked worktree + sidecar/`codex/*`) before removal, with atomic rollback if `thread/start` fails.
+6. **Concurrency & Bounded Memory**: Per-thread turn-start guards (`startingTurn`) and `thread/resume` deduplication (`loadingPromise`), plus automatic pruning of prior-turn items/diffs, `64 KiB` diff caps, and eviction of settled threads beyond `100`.
+7. **Multimodal Input**: `codex_run` accepts `images` (`localImage` paths, validated before starting a thread/turn) for screenshots or UI mockups.
 
 ## Prerequisites
 

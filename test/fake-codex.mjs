@@ -26,6 +26,8 @@ let threadSeq = 0;
 const waitingOn = new Map(); // server request id → callback(result)
 const turns = new Map(); // threadId → { id, onSteer }
 const sandboxes = new Map(); // threadId → sandbox from thread/start or thread/resume
+const threadMeta = new Map(); // threadId → { startModel, startEffort, resumeModel, resumeEffort, lastTurnParams }
+let initCapabilities = null;
 
 const send = (m) => process.stdout.write(JSON.stringify(m) + '\n');
 const notify = (method, params) => send({ method, params });
@@ -67,8 +69,8 @@ function startTurn(threadId, input) {
         threadId,
         turnId,
         tokenUsage: {
-          total: { totalTokens: 150, inputTokens: 100, cachedInputTokens: 20, outputTokens: 30, reasoningOutputTokens: 10 },
-          last: { totalTokens: 150, inputTokens: 100, cachedInputTokens: 20, outputTokens: 30, reasoningOutputTokens: 10 },
+          total: { totalTokens: 150, inputTokens: 100, cachedInputTokens: 20, cacheWriteInputTokens: 5, outputTokens: 30, reasoningOutputTokens: 10 },
+          last: { totalTokens: 150, inputTokens: 100, cachedInputTokens: 20, cacheWriteInputTokens: 5, outputTokens: 30, reasoningOutputTokens: 10 },
           modelContextWindow: 200000,
         },
       });
@@ -100,6 +102,9 @@ function startTurn(threadId, input) {
     } else if (text === 'policy') {
       message(threadId, turnId, `sandbox=${sandboxes.get(threadId)}`);
       complete(threadId, turnId);
+    } else if (text === 'inspect-meta') {
+      message(threadId, turnId, JSON.stringify({ initCapabilities, meta: threadMeta.get(threadId) ?? null }));
+      complete(threadId, turnId);
     } else if (text === 'error-fatal') {
       notify('error', { threadId, willRetry: false, error: { message: 'fatal upstream error' } });
       complete(threadId, turnId, 'failed');
@@ -116,7 +121,8 @@ function startTurn(threadId, input) {
 }
 
 const handlers = {
-  initialize: () => {
+  initialize: (p) => {
+    initCapabilities = p?.capabilities ?? null;
     const hangOnce = process.env.CODEX_FAKE_HANG_ONCE_FILE;
     if (hangOnce && existsSync(hangOnce)) {
       rmSync(hangOnce, { force: true });
@@ -135,7 +141,15 @@ const handlers = {
     }
     const id = `thread_${process.pid}_${threadSeq++}`;
     sandboxes.set(id, p.sandbox);
-    return { thread: { id }, cwd: p.cwd, model: 'fake-model', sandbox: p.sandbox, approvalPolicy: p.approvalPolicy };
+    const model = p.model ?? p.config?.model ?? 'fake-model';
+    threadMeta.set(id, {
+      startModel: p.model ?? null,
+      startEffort: p.config?.model_reasoning_effort ?? null,
+      resumeModel: null,
+      resumeEffort: null,
+      lastTurnParams: null,
+    });
+    return { thread: { id }, cwd: p.cwd, model, sandbox: p.sandbox, approvalPolicy: p.approvalPolicy };
   },
   'thread/resume': async (p) => {
     if (process.env.CODEX_FAKE_LOG_FILE) {
@@ -144,9 +158,25 @@ const handlers = {
     const resumeDelay = Number(process.env.CODEX_FAKE_RESUME_DELAY_MS || 0);
     if (resumeDelay > 0) await delay(resumeDelay);
     sandboxes.set(p.threadId, p.sandbox);
-    return { thread: { id: p.threadId } };
+    const prev = threadMeta.get(p.threadId) ?? { startModel: null, startEffort: null };
+    threadMeta.set(p.threadId, {
+      ...prev,
+      resumeModel: p.model ?? null,
+      resumeEffort: p.config?.model_reasoning_effort ?? null,
+    });
+    return { thread: { id: p.threadId }, ...(p.model && { model: p.model }), ...(p.cwd && { cwd: p.cwd }) };
   },
   'turn/start': (p) => {
+    const prev = threadMeta.get(p.threadId) ?? {};
+    threadMeta.set(p.threadId, {
+      ...prev,
+      lastTurnParams: {
+        model: p.model ?? null,
+        effort: p.effort ?? null,
+        cwd: p.cwd ?? null,
+        approvalPolicy: p.approvalPolicy ?? null,
+      },
+    });
     const text = p.input[0].text;
     if (text === 'delay-turn-start') {
       const turnId = `turn_${process.pid}_${itemSeq++}`;

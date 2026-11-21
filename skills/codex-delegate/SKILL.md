@@ -38,6 +38,12 @@ description: >-
 - Clean up after merging or discarding with `codex_worktree(action="remove", path=<worktree.path>, delete_branch=true)`.
 - Always verify Codex's diff/tests yourself before declaring the overall task complete.
 
+## Prompt Cache & Thread Continuity (GPT-6.2+)
+
+- Reuse the same `thread_id` for related follow-ups in the same repo so the cached prompt prefix stays hot.
+- Keep `model` and `effort` consistent across turns of a thread, and avoid introducing `output_schema` midway onto a warm coding thread—changing model, reasoning effort, or schema controls invalidates prompt caching and reasoning continuity.
+- Check `token_usage.cache_hit_rate` and `token_usage.cache_write` in tool reports to verify cache efficiency.
+
 ## Prompt Recipes
 
 See [references/prompt-recipes.md](references/prompt-recipes.md) for compact XML prompt templates adapted from OpenAI's Codex prompting guide.
