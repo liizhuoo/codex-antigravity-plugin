@@ -47,3 +47,7 @@ description: >-
 ## Prompt Recipes
 
 See [references/prompt-recipes.md](references/prompt-recipes.md) for compact XML prompt templates adapted from OpenAI's Codex prompting guide.
+
+## Plugin Feedback & Maintenance
+
+If real usage surfaces a genuine bug, protocol mismatch, or recurring workflow friction in this plugin itself (not the user's repo), flag the symptom and root cause to the user; once confirmed to fix or refine, read [../../AGENTS.md](../../AGENTS.md) and follow its verification and reload rules.

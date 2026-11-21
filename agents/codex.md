@@ -58,3 +58,4 @@ Before returning to the parent agent:
   - `thread_id` (and `codex resume <thread_id>` for manual terminal takeover)
   - Mode used (`current workspace` or `worktree` `path` + `branch`)
   - Concise summary of changes, touched files, commands/tests executed (with exit codes), and any open questions or residual risks.
+  - If you hit a genuine plugin/bridge defect or recurring workflow friction, report the symptom and suspected layer to the parent agent (do not edit the global plugin yourself).

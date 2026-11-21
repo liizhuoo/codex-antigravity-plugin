@@ -27,3 +27,4 @@ description: >-
 - If Codex reports no findings, say so explicitly and note any brief residual risk.
 - **STOP after presenting review findings**: Do not edit code or auto-apply fixes unless the user explicitly asks you (or Codex) to fix specific items.
 - Include the `thread_id` so the user or agent can follow up on the review thread if needed.
+- If real usage surfaces a genuine bug, protocol mismatch, or recurring friction in this plugin itself, flag it to the user; once confirmed to optimize, follow [../../AGENTS.md](../../AGENTS.md).
